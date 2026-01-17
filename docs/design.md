@@ -169,7 +169,7 @@ confluence-md push           # Push merged changes
 | `push` | Push to tracked remote |
 | `push --to <url>` | Push to different location |
 | `push --new --parent <url>` | Create new pages (uses metadata parent; `--parent` is fallback for root) |
-| `push --dry-run` | Preview changes without uploading |
+| `push --dry-run` | Preview pages/attachments that would be created, updated, or removed |
 | `push --minor` | Mark as minor edit (no notifications) |
 | `push --message "..."` | Set version message |
 | `push --no-labels` | Skip label sync |

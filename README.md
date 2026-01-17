@@ -102,7 +102,7 @@ confluence-md sync /path/to/repo --prune
 confluence-md push --prune-pages --prune-attachments
 ```
 
-Preview deletions with:
+Preview changes (including deletions) with:
 
 ```bash
 confluence-md push --dry-run --prune-pages --prune-attachments

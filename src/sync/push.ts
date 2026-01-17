@@ -84,9 +84,12 @@ async function pushPage(
     return;
   }
 
+  metadata.deleted = false;
+
   const markdown = await readPageMarkdown(pageDir);
   const storage = markdownToStorage(markdown);
   const contentHash = await computePageHash(pageDir);
+  const contentChanged = metadata.contentHash !== contentHash;
 
   if (!metadata.id) {
     if (!options.newPage) {
@@ -102,6 +105,17 @@ async function pushPage(
 
     const updated = updateConfigAfterPush(pageKey, metadata, config, created, contentHash);
     await postPushSync(client, pageDir, updated, options, config, result);
+    return;
+  }
+
+  if (!contentChanged) {
+    if (options.dryRun) {
+      await collectAttachmentPruneCandidates(client, metadata, pageDir, options, result);
+      return;
+    }
+    await postPushSync(client, pageDir, metadata, options, config, result);
+    metadata.contentHash = contentHash;
+    metadata.deleted = false;
     return;
   }
 
