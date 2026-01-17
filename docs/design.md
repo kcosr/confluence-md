@@ -129,7 +129,7 @@ confluence-md push
 
 # Output:
 # Warning: Remote page has changed since last pull (version 42 → 45)
-# Use --force to overwrite, or pull first to merge.
+# Use --force to overwrite (fetches latest version), or pull first to merge.
 
 confluence-md diff           # See what changed remotely
 confluence-md pull           # Update local (may need manual merge)
@@ -156,9 +156,11 @@ confluence-md push           # Push merged changes
 | `clone <url> [path]` | Download page/space to new local folder |
 | `clone --no-attachments` | Clone without downloading attachments |
 | `clone --no-labels` | Clone without syncing labels |
+| `clone --write-attachment-warnings` | Write skipped attachment warnings into `page.md` |
 | `pull` | Refresh from tracked remote |
 | `pull <url>` | Pull from different remote (override) |
 | `pull --no-labels` | Pull without syncing labels |
+| `pull --write-attachment-warnings` | Write skipped attachment warnings into `page.md` |
 | `push` | Push to tracked remote |
 | `push --to <url>` | Push to different location |
 | `push --new --parent <url>` | Create as new page under parent |
@@ -166,7 +168,8 @@ confluence-md push           # Push merged changes
 | `push --minor` | Mark as minor edit (no notifications) |
 | `push --message "..."` | Set version message |
 | `push --no-labels` | Skip label sync |
-| `push --force` | Overwrite even if remote changed |
+| `push --prune-attachments` | Delete remote attachments missing locally |
+| `push --force` | Overwrite even if remote changed (fetch latest version) |
 
 ### Comparison
 
@@ -177,7 +180,7 @@ confluence-md push           # Push merged changes
 | `diff <url>` | Diff local vs different remote page |
 | `diff <version>` | Diff local vs specific remote version |
 | `diff <v1> <v2>` | Diff between two remote versions |
-| `diff --cached` | Preview what would be pushed (storage format) |
+| `diff --cached` | Storage-format diff of what would be pushed |
 | `diff --stat` | Show change summary only |
 
 ### History
@@ -324,6 +327,8 @@ Page directories are derived from page titles:
 "My Page" (dup)     → "my-page-2"
 ```
 
+On pull/clone, if a page's title or parent changes, the local directory is renamed/moved to match the new slug and hierarchy; the `paths` index is updated accordingly.
+
 ---
 
 ## Configuration
@@ -341,7 +346,7 @@ Page directories are derived from page titles:
     "syncLabels": true
   },
   "pages": {
-    "home": {
+    "123456789": {
       "id": "123456789",
       "title": "Home",
       "parentId": null,
@@ -358,10 +363,16 @@ Page directories are derived from page titles:
           "hash": "sha256:789xyz...",
           "size": 102400,
           "status": "synced"
+        },
+        "large-video.mp4": {
+          "id": "att333444",
+          "size": 157286400,
+          "status": "skipped",
+          "reason": "exceeds maxAttachmentSize (50MB)"
         }
       }
     },
-    "getting-started": {
+    "123456790": {
       "id": "123456790",
       "title": "Getting Started",
       "parentId": "123456789",
@@ -373,6 +384,10 @@ Page directories are derived from page titles:
       "labels": ["tutorial", "getting-started"],
       "attachments": {}
     }
+  },
+  "paths": {
+    "home": "123456789",
+    "getting-started": "123456790"
   }
 }
 ```
@@ -386,8 +401,9 @@ Page directories are derived from page titles:
 | `space` | Space key |
 | `type` | `"page"` or `"space"` |
 | `settings.maxAttachmentSize` | Max attachment size in bytes (default 50MB) |
-| `pages` | Map of local path → page metadata |
-| `pages.*.id` | Confluence page ID (null if not yet pushed) |
+| `pages` | Map of page key → page metadata (page key = Confluence page ID when known, otherwise `local:<uuid>` for local-only pages) |
+| `paths` | Map of local path → page key (used for path lookups and renames) |
+| `pages.*.id` | Confluence page ID (null for local-only pages) |
 | `pages.*.title` | Page title |
 | `pages.*.parentId` | Parent page ID (null for space root) |
 | `pages.*.path` | Local directory path relative to root |
@@ -398,6 +414,8 @@ Page directories are derived from page titles:
 | `pages.*.contentHash` | SHA256 hash of local page.md at last sync |
 | `pages.*.labels` | Array of label names synced from Confluence |
 | `pages.*.attachments` | Map of filename → attachment metadata |
+| `pages.*.attachments.*.status` | `synced` or `skipped` (download failed/omitted) |
+| `pages.*.attachments.*.reason` | Reason for skipped attachment (if status=`skipped`) |
 | `settings.syncLabels` | Whether to sync labels (default: true) |
 
 ### Authentication
@@ -568,11 +586,13 @@ Elements that don't map cleanly to Markdown are preserved using fenced code bloc
 ````markdown
 ```confluence:<macro-name>
 key=value
-key2=value2
+key2="value with = and \\n"
 ---
 Body content here (can contain Markdown)
 ```
 ````
+
+Parameter lines are `key=value`. Values may be unquoted tokens or JSON-quoted strings; when quoted, JSON escaping applies (`\"`, `\\n`, `\\`).
 
 The `---` separator is only present if the macro has body content.
 
@@ -636,7 +656,7 @@ name=some-custom-macro
 
 ### Internal Links
 
-Links to other Confluence pages are converted to a special syntax:
+Links to other Confluence pages are converted to a special syntax. When generating links, use page IDs when known for stability; title-based links are accepted on input and used as a fallback.
 
 ```markdown
 <!-- Link to page in same space -->
@@ -660,9 +680,11 @@ Local attachments are referenced with relative paths:
 [Download PDF](attachments/report.pdf)
 ```
 
+On push, attachments removed locally are not deleted remotely unless `--prune-attachments` is specified.
+
 ### Failed/Skipped Attachments
 
-If an attachment fails to download, a visible warning is inserted:
+If an attachment fails to download, the failure is recorded in config (`attachments.*.status = "skipped"` with a `reason`). By default, the CLI logs a warning; use `--write-attachment-warnings` on `clone` or `pull` to insert a visible warning block into `page.md`:
 
 ```markdown
 > ⚠️ **ATTACHMENT NOT SYNCED:** `large-video.mp4`  
@@ -670,7 +692,7 @@ If an attachment fails to download, a visible warning is inserted:
 > Original attachment ID: att123456
 ```
 
-This renders visibly in both Markdown preview and (when pushed) in Confluence as an info panel.
+When inserted, this renders visibly in both Markdown preview and (when pushed) in Confluence as an info panel.
 
 ---
 
@@ -682,6 +704,8 @@ This renders visibly in both Markdown preview and (when pushed) in Confluence as
 REST API v1: https://{instance}.atlassian.net/wiki/rest/api/
 REST API v2: https://{instance}.atlassian.net/wiki/api/v2/
 ```
+
+MVP uses REST API v1 endpoints exclusively; v2 support is deferred behind the API client abstraction.
 
 ### Authentication
 
@@ -1294,6 +1318,13 @@ class NotFoundError extends ConfluenceMdError {
   code = 'NOT_FOUND';
 }
 
+class ApiError extends ConfluenceMdError {
+  code = 'API_ERROR';
+  status: number;
+  url: string;
+  responseBody?: string;
+}
+
 class ConflictError extends ConfluenceMdError {
   code = 'CONFLICT';
   localVersion: number;
@@ -1398,6 +1429,8 @@ async function updatePage(pageId: string, content: string, expectedVersion: numb
 }
 ```
 
+With `push --force`, fetch the latest remote version number before updating and use that version + 1 to overwrite.
+
 ### Rate Limiting
 
 Confluence Cloud has rate limits. Implement exponential backoff:
@@ -1438,10 +1471,9 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
 
 ### API Deprecation
 
-Confluence API v1 is being phased out in favor of v2. Design the API client to:
-- Prefer v2 endpoints where available
-- Fall back to v1 where necessary
-- Abstract the version difference from the rest of the codebase
+Confluence API v1 is being phased out in favor of v2. For MVP, use v1 endpoints only, but keep the API client abstracted to enable a future v2 migration:
+- Centralize REST version handling inside the API client
+- Normalize response shapes at the client boundary
 
 ---
 

@@ -8,22 +8,16 @@
   },
   "scripts": {
     "build": "tsc",
-    "dev": "tsx src/cli.ts",
+    "dev": "CONFLUENCE_URL=http://localhost:3000 CONFLUENCE_EMAIL=test@example.com CONFLUENCE_TOKEN=token tsx src/cli.ts",
     "test": "vitest",
     "test:run": "vitest run",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
-    "server": "tsx server/index.ts"
+    "server": "tsx server/index.ts",
+    "seed:page": "tsx scripts/create-test-page.ts"
   },
-  "keywords": [
-    "confluence",
-    "markdown",
-    "wiki",
-    "atlassian",
-    "sync",
-    "cli"
-  ],
+  "keywords": ["confluence", "markdown", "wiki", "atlassian", "sync", "cli"],
   "author": "",
   "license": "MIT",
   "engines": {
@@ -46,10 +40,13 @@
     "@biomejs/biome": "^1.9.0",
     "@types/diff": "^6.0.0",
     "@types/express": "^5.0.0",
+    "@types/mdast": "^4.0.0",
+    "@types/multer": "^1.4.12",
     "@types/node": "^22.0.0",
     "express": "^4.21.0",
+    "multer": "^1.4.5-lts.1",
     "tsx": "^4.19.0",
-    "typescript": "^5.6.0",
+    "typescript": "^5.9.3",
     "vitest": "^2.1.0"
   }
 }

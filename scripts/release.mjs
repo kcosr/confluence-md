@@ -15,18 +15,18 @@
  * 8. Commit and push
  */
 
-import { execSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { execSync } from "node:child_process";
+import { readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const root = join(__dirname, '..');
+const root = join(__dirname, "..");
 const bumpType = process.argv[2];
-const releaseBranch = 'main';
+const releaseBranch = "main";
 
-if (!['major', 'minor', 'patch'].includes(bumpType)) {
-  console.error('Usage: node scripts/release.mjs <major|minor|patch>');
+if (!["major", "minor", "patch"].includes(bumpType)) {
+  console.error("Usage: node scripts/release.mjs <major|minor|patch>");
   process.exit(1);
 }
 
@@ -34,8 +34,8 @@ function run(command, options = {}) {
   console.log(`$ ${command}`);
   try {
     return execSync(command, {
-      encoding: 'utf-8',
-      stdio: options.silent ? 'pipe' : 'inherit',
+      encoding: "utf-8",
+      stdio: options.silent ? "pipe" : "inherit",
       cwd: root,
       ...options,
     });
@@ -49,12 +49,12 @@ function run(command, options = {}) {
 }
 
 function getVersion() {
-  const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf-8'));
+  const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf-8"));
   return pkg.version;
 }
 
 function getRepoUrl() {
-  const remote = run('git remote get-url origin', { silent: true, ignoreError: true });
+  const remote = run("git remote get-url origin", { silent: true, ignoreError: true });
   if (!remote) {
     return null;
   }
@@ -71,25 +71,22 @@ function getRepoUrl() {
 }
 
 function getCurrentBranch() {
-  const branch = run('git rev-parse --abbrev-ref HEAD', { silent: true });
+  const branch = run("git rev-parse --abbrev-ref HEAD", { silent: true });
   return branch.trim();
 }
 
 function updateChangelogForRelease(version) {
-  const changelogPath = join(root, 'CHANGELOG.md');
-  const date = new Date().toISOString().split('T')[0];
-  let content = readFileSync(changelogPath, 'utf-8');
+  const changelogPath = join(root, "CHANGELOG.md");
+  const date = new Date().toISOString().split("T")[0];
+  let content = readFileSync(changelogPath, "utf-8");
 
-  if (!content.includes('## [Unreleased]')) {
-    console.error('Error: No [Unreleased] section found in CHANGELOG.md');
+  if (!content.includes("## [Unreleased]")) {
+    console.error("Error: No [Unreleased] section found in CHANGELOG.md");
     process.exit(1);
   }
 
   const releaseHeading = `## [${version}] - ${date}`;
-  content = content.replace(
-    /## \[Unreleased\]\n\n_No unreleased changes\._/,
-    releaseHeading
-  );
+  content = content.replace(/## \[Unreleased\]\n\n_No unreleased changes\._/, releaseHeading);
   content = content.replace(/## \[Unreleased\]/, releaseHeading);
 
   writeFileSync(changelogPath, content);
@@ -97,13 +94,11 @@ function updateChangelogForRelease(version) {
 }
 
 function extractReleaseNotes(version) {
-  const changelogPath = join(root, 'CHANGELOG.md');
-  const content = readFileSync(changelogPath, 'utf-8');
+  const changelogPath = join(root, "CHANGELOG.md");
+  const content = readFileSync(changelogPath, "utf-8");
 
-  const versionEscaped = version.replace(/\./g, '\\.');
-  const regex = new RegExp(
-    `## \\[${versionEscaped}\\][^\\n]*\\n([\\s\\S]*?)(?=\\n## \\[|$)`
-  );
+  const versionEscaped = version.replace(/\./g, "\\.");
+  const regex = new RegExp(`## \\[${versionEscaped}\\][^\\n]*\\n([\\s\\S]*?)(?=\\n## \\[|$)`);
   const match = content.match(regex);
 
   if (!match) {
@@ -115,46 +110,46 @@ function extractReleaseNotes(version) {
 }
 
 function addUnreleasedSection() {
-  const changelogPath = join(root, 'CHANGELOG.md');
-  let content = readFileSync(changelogPath, 'utf-8');
+  const changelogPath = join(root, "CHANGELOG.md");
+  let content = readFileSync(changelogPath, "utf-8");
 
   const unreleasedSection = [
-    '## [Unreleased]',
-    '',
-    '### Breaking Changes',
-    '',
-    '### Added',
-    '',
-    '### Changed',
-    '',
-    '### Fixed',
-    '',
-    '### Removed',
-    '',
-    '',
-  ].join('\n');
+    "## [Unreleased]",
+    "",
+    "### Breaking Changes",
+    "",
+    "### Added",
+    "",
+    "### Changed",
+    "",
+    "### Fixed",
+    "",
+    "### Removed",
+    "",
+    "",
+  ].join("\n");
 
   content = content.replace(/^(# Changelog\n\n)/, `$1${unreleasedSection}`);
 
   writeFileSync(changelogPath, content);
-  console.log('  Added [Unreleased] section to CHANGELOG.md');
+  console.log("  Added [Unreleased] section to CHANGELOG.md");
 }
 
-console.log('\n=== Release Script ===\n');
+console.log("\n=== Release Script ===\n");
 
-console.log('Checking for uncommitted changes...');
-const status = run('git status --porcelain', { silent: true });
-if (status && status.trim()) {
-  console.error('Error: Uncommitted changes detected. Commit or stash first.');
+console.log("Checking for uncommitted changes...");
+const status = run("git status --porcelain", { silent: true });
+if (status?.trim()) {
+  console.error("Error: Uncommitted changes detected. Commit or stash first.");
   console.error(status);
   process.exit(1);
 }
-console.log('  Working directory clean\n');
+console.log("  Working directory clean\n");
 
 const currentBranch = getCurrentBranch();
 if (currentBranch !== releaseBranch) {
   console.error(
-    `Error: Release must run from ${releaseBranch} (current branch: ${currentBranch}).`
+    `Error: Release must run from ${releaseBranch} (current branch: ${currentBranch}).`,
   );
   process.exit(1);
 }
@@ -164,35 +159,35 @@ run(`node scripts/bump-version.mjs ${bumpType}`);
 const version = getVersion();
 console.log(`  New version: ${version}\n`);
 
-console.log('Updating CHANGELOG.md...');
+console.log("Updating CHANGELOG.md...");
 updateChangelogForRelease(version);
 console.log();
 
-console.log('Committing and tagging...');
-run('git add CHANGELOG.md package.json package-lock.json');
+console.log("Committing and tagging...");
+run("git add CHANGELOG.md package.json package-lock.json");
 run(`git commit -m "Release v${version}"`);
 run(`git tag v${version}`);
 console.log();
 
-console.log('Pushing to remote...');
+console.log("Pushing to remote...");
 run(`git push origin ${releaseBranch}`);
 run(`git push origin v${version}`);
 console.log();
 
-console.log('Creating GitHub release...');
+console.log("Creating GitHub release...");
 const releaseNotes = extractReleaseNotes(version);
-const notesFile = join(root, '.release-notes-tmp.md');
+const notesFile = join(root, ".release-notes-tmp.md");
 writeFileSync(notesFile, releaseNotes);
 run(`gh release create v${version} --prerelease --title "v${version}" --notes-file "${notesFile}"`);
 run(`rm "${notesFile}"`);
 console.log();
 
-console.log('Adding [Unreleased] section for next cycle...');
+console.log("Adding [Unreleased] section for next cycle...");
 addUnreleasedSection();
 console.log();
 
-console.log('Committing changelog update...');
-run('git add CHANGELOG.md');
+console.log("Committing changelog update...");
+run("git add CHANGELOG.md");
 run('git commit -m "Prepare for next release"');
 run(`git push origin ${releaseBranch}`);
 console.log();
