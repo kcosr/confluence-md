@@ -1,0 +1,55 @@
+{
+  "name": "confluence-md",
+  "version": "0.0.0",
+  "description": "Git-style CLI for bidirectional Confluence ↔ Markdown sync",
+  "type": "module",
+  "bin": {
+    "confluence-md": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "server": "tsx server/index.ts"
+  },
+  "keywords": [
+    "confluence",
+    "markdown",
+    "wiki",
+    "atlassian",
+    "sync",
+    "cli"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "commander": "^12.1.0",
+    "diff": "^7.0.0",
+    "fast-xml-parser": "^4.5.0",
+    "glob": "^11.0.0",
+    "rehype-parse": "^9.0.0",
+    "rehype-stringify": "^10.0.0",
+    "remark-gfm": "^4.0.0",
+    "remark-parse": "^11.0.0",
+    "remark-stringify": "^11.0.0",
+    "unified": "^11.0.5"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.0",
+    "@types/diff": "^6.0.0",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "express": "^4.21.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}
