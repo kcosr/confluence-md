@@ -1,6 +1,6 @@
 {
   "name": "confluence-md",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "Git-style CLI for bidirectional Confluence ↔ Markdown sync",
   "type": "module",
   "bin": {
@@ -17,7 +17,14 @@
     "server": "tsx server/index.ts",
     "seed:page": "tsx scripts/create-test-page.ts"
   },
-  "keywords": ["confluence", "markdown", "wiki", "atlassian", "sync", "cli"],
+  "keywords": [
+    "confluence",
+    "markdown",
+    "wiki",
+    "atlassian",
+    "sync",
+    "cli"
+  ],
   "author": "",
   "license": "MIT",
   "engines": {
