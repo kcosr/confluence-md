@@ -11,6 +11,7 @@
 - Added `sync --prune` and `push --prune-pages` with dry-run previews for deleted pages/attachments ([#1](https://github.com/kcosr/confluence-md/pull/1))
 
 ### Changed
+- Bumped `multer` to v2 for security fixes ([#1](https://github.com/kcosr/confluence-md/pull/1))
 
 ### Fixed
 
