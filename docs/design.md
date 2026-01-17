@@ -159,11 +159,12 @@ confluence-md push           # Push merged changes
 | `clone --write-attachment-warnings` | Write skipped attachment warnings into `page.md` |
 | `pull` | Refresh from tracked remote |
 | `pull <url>` | Pull from different remote (override) |
+| `sync <source-path>` | Sync markdown from a source directory into this workspace |
 | `pull --no-labels` | Pull without syncing labels |
 | `pull --write-attachment-warnings` | Write skipped attachment warnings into `page.md` |
 | `push` | Push to tracked remote |
 | `push --to <url>` | Push to different location |
-| `push --new --parent <url>` | Create as new page under parent |
+| `push --new --parent <url>` | Create new pages (uses metadata parent; `--parent` is fallback for root) |
 | `push --dry-run` | Preview changes without uploading |
 | `push --minor` | Mark as minor edit (no notifications) |
 | `push --message "..."` | Set version message |

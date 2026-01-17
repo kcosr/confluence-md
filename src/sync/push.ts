@@ -1,9 +1,10 @@
+import { dirname } from "node:path";
 import type { ConfluenceClient } from "../api/client.js";
 import type { Page } from "../api/types.js";
 import { markdownToStorage } from "../converter/md-to-storage.js";
 import { ConflictError } from "../errors.js";
 import type { ConfluenceMdConfig, PageMetadata } from "../types.js";
-import { pageDirFromPath } from "../utils/paths.js";
+import { normalizePath, pageDirFromPath } from "../utils/paths.js";
 import { uploadAttachments } from "./attachments.js";
 import { readConfig, writeConfig } from "./config.js";
 import { hasRemoteChanged } from "./conflict.js";
@@ -27,8 +28,14 @@ export async function push(
   options: PushOptions,
 ): Promise<ConfluenceMdConfig> {
   const config = await readConfig(rootDir);
+  const entries = Object.entries(config.pages);
 
-  for (const [pageKey, metadata] of Object.entries(config.pages)) {
+  const newPages = entries
+    .filter(([, metadata]) => !metadata.id)
+    .sort(([, a], [, b]) => pathDepth(a.path) - pathDepth(b.path));
+  const existingPages = entries.filter(([, metadata]) => metadata.id);
+
+  for (const [pageKey, metadata] of [...newPages, ...existingPages]) {
     await pushPage(client, rootDir, pageKey, metadata, config, options);
   }
 
@@ -53,19 +60,12 @@ async function pushPage(
     if (!options.newPage) {
       return;
     }
-    if (!options.parentId) {
-      throw new Error("Parent page ID required for new page push");
-    }
+    const parentId = resolveParentId(metadata, config, options.parentId);
     if (options.dryRun) {
       return;
     }
 
-    const created = await client.createPage(
-      config.space,
-      metadata.title,
-      storage,
-      options.parentId,
-    );
+    const created = await client.createPage(config.space, metadata.title, storage, parentId);
 
     const updated = updateConfigAfterPush(pageKey, metadata, config, created, contentHash);
     await postPushSync(client, pageDir, updated, options, config);
@@ -147,4 +147,39 @@ async function postPushSync(
     const labels = await readLabelsFile(pageDir);
     metadata.labels = await syncLabelsToRemote(client, metadata.id, labels);
   }
+}
+
+function resolveParentId(
+  metadata: PageMetadata,
+  config: ConfluenceMdConfig,
+  fallbackParentId?: string,
+): string | undefined {
+  if (metadata.parentId) {
+    return metadata.parentId;
+  }
+
+  const parentPath = normalizePath(dirname(metadata.path));
+  if (!parentPath || parentPath === ".") {
+    return fallbackParentId;
+  }
+
+  const parentKey = config.paths[parentPath];
+  if (!parentKey) {
+    return fallbackParentId;
+  }
+
+  const parent = config.pages[parentKey];
+  if (parent?.id) {
+    return parent.id;
+  }
+
+  if (fallbackParentId) {
+    return fallbackParentId;
+  }
+
+  throw new Error(`Parent page missing ID for ${metadata.path}`);
+}
+
+function pathDepth(path: string): number {
+  return path.split("/").filter(Boolean).length;
 }

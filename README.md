@@ -53,6 +53,9 @@ confluence-md diff
 # Diff summary only
 confluence-md diff --stat
 
+# Sync markdown from a source repo into a cloned workspace
+confluence-md sync /path/to/docs
+
 # View history
 confluence-md log
 ```

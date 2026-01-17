@@ -13,6 +13,7 @@ import { createConfig, createLocalPageKey, readConfig, writeConfig } from "../sy
 import { pull } from "../sync/pull.js";
 import { push } from "../sync/push.js";
 import { getStatus, getStatusWithRemote } from "../sync/status.js";
+import { syncFromSource } from "../sync/sync.js";
 import { computePageHash, writePageMarkdown } from "../sync/tracker.js";
 import type { ConfluenceMdConfig, PageMetadata } from "../types.js";
 import { createDiffStat, createUnifiedDiff, formatDiffStat } from "../utils/diff.js";
@@ -85,6 +86,18 @@ export function buildCli(): Command {
         writeAttachmentWarnings: options.writeAttachmentWarnings,
       });
       console.log(`Cloned ${url} into ${target}`);
+    });
+
+  program
+    .command("sync")
+    .argument("<source-path>")
+    .description("Sync markdown from a source directory into this workspace")
+    .action(async (sourcePath: string) => {
+      const root = process.cwd();
+      const result = await syncFromSource(root, sourcePath);
+      console.log(
+        `Synced ${result.updatedPages} pages (${result.createdPages} new), copied ${result.attachmentsCopied} attachments.`,
+      );
     });
 
   program

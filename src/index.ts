@@ -15,3 +15,4 @@ export * from "./sync/push.js";
 export * from "./sync/status.js";
 export * from "./sync/attachments.js";
 export * from "./sync/labels.js";
+export * from "./sync/sync.js";
