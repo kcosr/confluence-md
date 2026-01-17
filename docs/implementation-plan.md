@@ -180,6 +180,16 @@
 
 ---
 
+## Post-MVP Enhancements (Implemented)
+- Page subtree cloning when cloning a single page (includes descendants).
+- `sync` command to stage repo markdown into a workspace with link and attachment rewriting.
+- `sync --prefix` to stage content under a root path without wrapper directories.
+- Page-context sync: root README/index maps to the root page when cloning a single page.
+- `sync --prune` to mark missing pages for deletion.
+- `push --prune-pages` to delete remote pages marked for deletion.
+- `push --dry-run` plan output for created/updated/deleted pages and attachments.
+- Integration tests against the fake server.
+
 ## Execution Order
 1. Phase 1
 2. Phase 2
