@@ -56,8 +56,56 @@ confluence-md diff --stat
 # Sync markdown from a source repo into a cloned workspace
 confluence-md sync /path/to/docs
 
+# Prefix synced pages under a root path (avoids wrapper directories)
+confluence-md sync /path/to/docs --prefix agent-workspaces
+
+# For a single-page clone, root README/index maps to the root page
+confluence-md sync /path/to/docs
+
 # View history
 confluence-md log
+```
+
+## Repo → Confluence quick start
+
+Use this flow when your **Git repo is the source of truth** and Confluence is a published view. You manage docs in Git and re-publish to Confluence as needed.
+
+### Initial import under an empty root page
+1) Create an **empty root page** in Confluence (UI) and copy its URL.
+2) Clone that page (includes sub-pages if any):
+
+```bash
+confluence-md clone "<root page url>" ./workspace
+cd ./workspace
+```
+
+3) Sync your repo into the workspace and push:
+
+```bash
+confluence-md sync /path/to/repo
+confluence-md push --new --prune-attachments
+```
+
+### Subsequent updates (git is source of truth)
+
+```bash
+confluence-md sync /path/to/repo
+confluence-md push --prune-attachments
+```
+
+If new files were added since last push, include `--new` once to create new pages.
+
+### Pruning pages removed from git
+
+```bash
+confluence-md sync /path/to/repo --prune
+confluence-md push --prune-pages --prune-attachments
+```
+
+Preview deletions with:
+
+```bash
+confluence-md push --dry-run --prune-pages --prune-attachments
 ```
 
 ## Fake Confluence Server

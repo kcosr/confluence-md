@@ -41,3 +41,28 @@ function assignPaths(
     assignPaths(child.id, path, childrenByParent, pathMap);
   }
 }
+
+export function buildSubtreePathMap(rootId: string, pages: Page[]): Record<string, string> {
+  const childrenByParent = new Map<string | null, Page[]>();
+
+  for (const page of pages) {
+    if (page.id === rootId) {
+      continue;
+    }
+    const parentId =
+      page.ancestors && page.ancestors.length > 0
+        ? page.ancestors[page.ancestors.length - 1]?.id
+        : null;
+    const list = childrenByParent.get(parentId) ?? [];
+    list.push(page);
+    childrenByParent.set(parentId, list);
+  }
+
+  const pathMap: Record<string, string> = {
+    [rootId]: ".",
+  };
+
+  assignPaths(rootId, "", childrenByParent, pathMap);
+
+  return pathMap;
+}

@@ -6,6 +6,9 @@
 
 ### Added
 - Added `sync` command to stage markdown from a source directory with link and attachment rewriting ([#1](https://github.com/kcosr/confluence-md/pull/1))
+- Added `sync --prefix` to stage content under a root path without wrapper directories ([#1](https://github.com/kcosr/confluence-md/pull/1))
+- Added page clone support for descendant pages and root README mapping for page workspaces ([#1](https://github.com/kcosr/confluence-md/pull/1))
+- Added `sync --prune` and `push --prune-pages` with dry-run previews for deleted pages/attachments ([#1](https://github.com/kcosr/confluence-md/pull/1))
 
 ### Changed
 

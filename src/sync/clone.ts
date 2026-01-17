@@ -8,7 +8,7 @@ import type { ConfluenceMdConfig, PageMetadata } from "../types.js";
 import { pageDirFromPath } from "../utils/paths.js";
 import { downloadAttachments } from "./attachments.js";
 import { createConfig, writeConfig } from "./config.js";
-import { buildPagePathMap } from "./hierarchy.js";
+import { buildPagePathMap, buildSubtreePathMap } from "./hierarchy.js";
 import { writeLabelsFile } from "./labels.js";
 import { computePageHash, writePageMarkdown } from "./tracker.js";
 
@@ -37,8 +37,8 @@ export async function cloneFromUrl(
     const pages = await client.getSpacePages(parsed.spaceKey, { depth: "all" });
     await cloneSpace(client, pages, targetDir, config, options);
   } else {
-    const page = await resolvePage(client, parsed.spaceKey, parsed.pageId, parsed.title);
-    await clonePage(client, page, targetDir, ".", config, options);
+    const rootPage = await resolvePage(client, parsed.spaceKey, parsed.pageId, parsed.title);
+    await cloneSubtree(client, rootPage, targetDir, config, options);
   }
 
   await writeConfig(targetDir, config);
@@ -53,6 +53,27 @@ async function cloneSpace(
   options: CloneOptions,
 ): Promise<void> {
   const pathMap = buildPagePathMap(pages);
+
+  for (const page of pages) {
+    const path = pathMap[page.id];
+    if (!path) {
+      continue;
+    }
+    await clonePage(client, page, targetDir, path, config, options);
+  }
+}
+
+async function cloneSubtree(
+  client: ConfluenceClient,
+  rootPage: Page,
+  targetDir: string,
+  config: ConfluenceMdConfig,
+  options: CloneOptions,
+): Promise<void> {
+  const descendants = await client.getDescendantPages(rootPage.id);
+  const descendantPages = await Promise.all(descendants.map((page) => client.getPage(page.id)));
+  const pages = [rootPage, ...descendantPages];
+  const pathMap = buildSubtreePathMap(rootPage.id, pages);
 
   for (const page of pages) {
     const path = pathMap[page.id];
@@ -117,6 +138,7 @@ async function clonePage(
     contentHash,
     labels,
     attachments,
+    deleted: false,
   };
 
   config.pages[pageKey] = metadata;

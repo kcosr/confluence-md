@@ -16,7 +16,8 @@ const MARKDOWN_EXTENSIONS = new Set([".md", ".markdown"]);
 const INDEX_FILES = new Set(["readme", "index"]);
 
 export interface SyncFromSourceOptions {
-  sourcePath: string;
+  prefix?: string;
+  prune?: boolean;
 }
 
 export interface SyncFromSourceResult {
@@ -28,6 +29,7 @@ export interface SyncFromSourceResult {
 export async function syncFromSource(
   workspaceDir: string,
   sourcePath: string,
+  options: SyncFromSourceOptions = {},
 ): Promise<SyncFromSourceResult> {
   const config = await readConfig(workspaceDir);
   if (!config.space) {
@@ -35,9 +37,13 @@ export async function syncFromSource(
   }
   const sourceRoot = resolve(sourcePath);
   const markdownFiles = await findMarkdownFiles(sourceRoot);
+  const prefix = normalizePrefix(options.prefix);
+  const mapRootToWorkspace = config.type === "page" && !prefix;
 
   const fileInfos = await Promise.all(
-    markdownFiles.map(async (filePath) => buildFileInfo(filePath, sourceRoot)),
+    markdownFiles.map(async (filePath) =>
+      buildFileInfo(filePath, sourceRoot, prefix, mapRootToWorkspace),
+    ),
   );
 
   const pagePaths = new Set<string>();
@@ -70,16 +76,20 @@ export async function syncFromSource(
         version: 0,
         labels: [],
         attachments: {},
+        deleted: false,
       };
       config.pages[pageKey] = metadata;
       config.paths[path] = pageKey;
       createdPages += 1;
     } else {
       const metadata = config.pages[existingKey];
-      if (metadata && !metadata.id) {
-        const title = titlesByPath.get(path);
-        if (title) {
-          metadata.title = title;
+      if (metadata) {
+        metadata.deleted = false;
+        if (!metadata.id) {
+          const title = titlesByPath.get(path);
+          if (title) {
+            metadata.title = title;
+          }
         }
       }
     }
@@ -88,6 +98,19 @@ export async function syncFromSource(
   for (const metadata of Object.values(config.pages)) {
     if (!metadata.id) {
       metadata.parentId = resolveParentId(metadata.path, config);
+    }
+  }
+
+  if (options.prune) {
+    const pagePathSet = new Set(pagePaths);
+    for (const metadata of Object.values(config.pages)) {
+      if (metadata.path === ".") {
+        continue;
+      }
+      if (!pagePathSet.has(metadata.path)) {
+        metadata.deleted = true;
+        await removeLocalPageDir(workspaceDir, metadata.path);
+      }
     }
   }
 
@@ -166,13 +189,19 @@ interface FileInfo {
   markdown: string;
 }
 
-async function buildFileInfo(filePath: string, sourceRoot: string): Promise<FileInfo> {
+async function buildFileInfo(
+  filePath: string,
+  sourceRoot: string,
+  prefix: string,
+  mapRootToWorkspace: boolean,
+): Promise<FileInfo> {
   const markdown = await fs.readFile(filePath, "utf8");
   const relativePath = normalizePath(relative(sourceRoot, filePath));
   const pagePath = derivePagePath(relativePath);
   const title = extractTitle(markdown, relativePath);
+  const finalPagePath = applyPrefix(pagePath, relativePath, prefix, mapRootToWorkspace);
 
-  return { filePath, pagePath, title, markdown };
+  return { filePath, pagePath: finalPagePath, title, markdown };
 }
 
 async function findMarkdownFiles(sourceRoot: string): Promise<string[]> {
@@ -200,7 +229,7 @@ function derivePagePath(relativeFilePath: string): string {
     return normalizePath(segments.join("/"));
   }
 
-  const tail = baseName && !INDEX_FILES.has(baseName) ? slugify(fileName) : slugify(fileName);
+  const tail = baseName ? slugify(fileName) : "";
   return normalizePath([...segments, tail].filter(Boolean).join("/"));
 }
 
@@ -237,6 +266,45 @@ function collectParentPaths(path: string): string[] {
   return parents;
 }
 
+function normalizePrefix(prefix?: string): string {
+  if (!prefix) {
+    return "";
+  }
+  const normalized = normalizePath(prefix);
+  if (!normalized || normalized === ".") {
+    return "";
+  }
+  return normalized
+    .split("/")
+    .filter(Boolean)
+    .map((segment) => slugify(segment))
+    .join("/");
+}
+
+function applyPrefix(
+  pagePath: string,
+  relativePath: string,
+  prefix: string,
+  mapRootToWorkspace: boolean,
+): string {
+  const baseName = basename(relativePath, extname(relativePath)).toLowerCase();
+  const isRootIndex = INDEX_FILES.has(baseName) && !relativePath.includes("/");
+
+  if (mapRootToWorkspace && isRootIndex) {
+    return ".";
+  }
+
+  if (prefix && isRootIndex) {
+    return normalizePath(prefix);
+  }
+
+  if (!prefix) {
+    return pagePath;
+  }
+
+  return normalizePath([prefix, pagePath].filter(Boolean).join("/"));
+}
+
 function depthForPath(path: string): number {
   return path.split("/").filter(Boolean).length;
 }
@@ -244,16 +312,25 @@ function depthForPath(path: string): number {
 function resolveParentId(path: string, config: ConfluenceMdConfig): string | null {
   const parentPath = normalizePath(dirname(path));
   if (!parentPath || parentPath === ".") {
-    return null;
+    return config.type === "page" ? getRootPageId(config) : null;
   }
 
   const parentKey = config.paths[parentPath];
   if (!parentKey) {
-    return null;
+    return config.type === "page" ? getRootPageId(config) : null;
   }
 
   const parent = config.pages[parentKey];
   return parent?.id ?? null;
+}
+
+function getRootPageId(config: ConfluenceMdConfig): string | null {
+  const rootKey = config.paths["."];
+  if (!rootKey) {
+    return null;
+  }
+  const root = config.pages[rootKey];
+  return root?.id ?? null;
 }
 
 interface AttachmentContext {
@@ -389,4 +466,9 @@ async function fileExists(path: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+async function removeLocalPageDir(workspaceDir: string, pagePath: string): Promise<void> {
+  const pageDir = pageDirFromPath(workspaceDir, pagePath);
+  await fs.rm(pageDir, { recursive: true, force: true });
 }

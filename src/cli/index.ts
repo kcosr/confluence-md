@@ -12,6 +12,7 @@ import { cloneFromUrl } from "../sync/clone.js";
 import { createConfig, createLocalPageKey, readConfig, writeConfig } from "../sync/config.js";
 import { pull } from "../sync/pull.js";
 import { push } from "../sync/push.js";
+import type { PushResult } from "../sync/push.js";
 import { getStatus, getStatusWithRemote } from "../sync/status.js";
 import { syncFromSource } from "../sync/sync.js";
 import { computePageHash, writePageMarkdown } from "../sync/tracker.js";
@@ -42,6 +43,7 @@ interface PushCommandOptions {
   message?: string;
   labels: boolean;
   pruneAttachments?: boolean;
+  prunePages?: boolean;
   force?: boolean;
   profile?: string;
 }
@@ -49,6 +51,11 @@ interface PushCommandOptions {
 interface DiffCommandOptions {
   cached?: boolean;
   stat?: boolean;
+}
+
+interface SyncCommandOptions {
+  prefix?: string;
+  prune?: boolean;
 }
 
 interface LogCommandOptions {
@@ -92,9 +99,14 @@ export function buildCli(): Command {
     .command("sync")
     .argument("<source-path>")
     .description("Sync markdown from a source directory into this workspace")
-    .action(async (sourcePath: string) => {
+    .option("--prefix <path>", "Prefix synced pages under a root path")
+    .option("--prune", "Mark pages missing from the source for deletion")
+    .action(async (sourcePath: string, options: SyncCommandOptions) => {
       const root = process.cwd();
-      const result = await syncFromSource(root, sourcePath);
+      const result = await syncFromSource(root, sourcePath, {
+        prefix: options.prefix,
+        prune: options.prune,
+      });
       console.log(
         `Synced ${result.updatedPages} pages (${result.createdPages} new), copied ${result.attachmentsCopied} attachments.`,
       );
@@ -128,6 +140,7 @@ export function buildCli(): Command {
     .option("--message <message>", "Set version message")
     .option("--no-labels", "Skip labels")
     .option("--prune-attachments", "Delete remote attachments missing locally")
+    .option("--prune-pages", "Delete remote pages missing locally")
     .option("--force", "Overwrite even if remote changed")
     .option("--profile <profile>")
     .action(async (options: PushCommandOptions) => {
@@ -138,16 +151,21 @@ export function buildCli(): Command {
       const parentId = options.parent ? parseConfluenceUrl(options.parent).pageId : undefined;
 
       try {
-        await push(client, root, {
+        const result = await push(client, root, {
           dryRun: options.dryRun,
           minor: options.minor,
           message: options.message,
           noLabels: !options.labels,
           pruneAttachments: options.pruneAttachments,
+          prunePages: options.prunePages,
           force: options.force,
           newPage: options.new,
           parentId,
         });
+        if (options.dryRun) {
+          printPushPlan(result);
+          return;
+        }
         console.log("Push complete.");
       } catch (error) {
         if (error instanceof ConflictError) {
@@ -343,6 +361,7 @@ export function buildCli(): Command {
         version: 0,
         labels: [],
         attachments: {},
+        deleted: false,
       };
       config.paths["."] = pageKey;
       await writeConfig(root, config);
@@ -544,5 +563,50 @@ async function fileExists(path: string): Promise<boolean> {
     return true;
   } catch {
     return false;
+  }
+}
+
+function printPushPlan(result: PushResult): void {
+  const created = result.createdPages;
+  const updated = result.updatedPages;
+  const deletedPages = result.deletedPages;
+  const deletedAttachments = result.deletedAttachments;
+
+  if (created.length > 0) {
+    console.log("Would create pages:");
+    for (const path of created) {
+      console.log(`  + ${path}`);
+    }
+  }
+
+  if (updated.length > 0) {
+    console.log("Would update pages:");
+    for (const path of updated) {
+      console.log(`  ~ ${path}`);
+    }
+  }
+
+  if (deletedPages.length > 0) {
+    console.log("Would delete pages:");
+    for (const path of deletedPages) {
+      console.log(`  - ${path}`);
+    }
+  }
+
+  const attachmentEntries = Object.entries(deletedAttachments);
+  if (attachmentEntries.length > 0) {
+    console.log("Would delete attachments:");
+    for (const [path, files] of attachmentEntries) {
+      console.log(`  ${path}: ${files.join(", ")}`);
+    }
+  }
+
+  if (
+    created.length === 0 &&
+    updated.length === 0 &&
+    deletedPages.length === 0 &&
+    attachmentEntries.length === 0
+  ) {
+    console.log("No changes to push.");
   }
 }

@@ -86,6 +86,7 @@ async function pullSpace(
       contentHash: "",
       labels: [],
       attachments: {},
+      deleted: false,
     };
     config.pages[page.id] = metadata;
     config.paths[path] = page.id;

@@ -22,6 +22,7 @@ export interface PageMetadata {
   contentHash?: string;
   labels: string[];
   attachments: Record<string, AttachmentMetadata>;
+  deleted?: boolean;
 }
 
 export interface ConfigSettings {

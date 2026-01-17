@@ -143,6 +143,25 @@ export async function uploadAttachments(
   return nextMetadata;
 }
 
+export interface AttachmentPruneCandidate {
+  id: string;
+  filename: string;
+}
+
+export async function getAttachmentPruneCandidates(
+  client: ConfluenceClient,
+  pageId: string,
+  pageDir: string,
+): Promise<AttachmentPruneCandidate[]> {
+  const attachmentsDir = attachmentsDirPath(pageDir);
+  const localFiles = await listLocalAttachmentFiles(attachmentsDir);
+  const remoteAttachments = await client.getAttachments(pageId);
+
+  return remoteAttachments
+    .filter((attachment) => !localFiles.includes(attachment.title))
+    .map((attachment) => ({ id: attachment.id, filename: attachment.title }));
+}
+
 async function listLocalAttachmentFiles(dir: string): Promise<string[]> {
   try {
     const entries = await fs.readdir(dir, { withFileTypes: true });

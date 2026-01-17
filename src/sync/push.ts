@@ -1,11 +1,12 @@
+import { promises as fs } from "node:fs";
 import { dirname } from "node:path";
 import type { ConfluenceClient } from "../api/client.js";
 import type { Page } from "../api/types.js";
 import { markdownToStorage } from "../converter/md-to-storage.js";
 import { ConflictError } from "../errors.js";
 import type { ConfluenceMdConfig, PageMetadata } from "../types.js";
-import { normalizePath, pageDirFromPath } from "../utils/paths.js";
-import { uploadAttachments } from "./attachments.js";
+import { normalizePath, pageDirFromPath, pageMarkdownPath } from "../utils/paths.js";
+import { getAttachmentPruneCandidates, uploadAttachments } from "./attachments.js";
 import { readConfig, writeConfig } from "./config.js";
 import { hasRemoteChanged } from "./conflict.js";
 import { readLabelsFile, syncLabelsToRemote } from "./labels.js";
@@ -17,18 +18,33 @@ export interface PushOptions {
   message?: string;
   noLabels?: boolean;
   pruneAttachments?: boolean;
+  prunePages?: boolean;
   force?: boolean;
   newPage?: boolean;
   parentId?: string;
+}
+
+export interface PushResult {
+  createdPages: string[];
+  updatedPages: string[];
+  deletedPages: string[];
+  deletedAttachments: Record<string, string[]>;
 }
 
 export async function push(
   client: ConfluenceClient,
   rootDir: string,
   options: PushOptions,
-): Promise<ConfluenceMdConfig> {
+): Promise<PushResult> {
   const config = await readConfig(rootDir);
   const entries = Object.entries(config.pages);
+
+  const result: PushResult = {
+    createdPages: [],
+    updatedPages: [],
+    deletedPages: [],
+    deletedAttachments: {},
+  };
 
   const newPages = entries
     .filter(([, metadata]) => !metadata.id)
@@ -36,11 +52,11 @@ export async function push(
   const existingPages = entries.filter(([, metadata]) => metadata.id);
 
   for (const [pageKey, metadata] of [...newPages, ...existingPages]) {
-    await pushPage(client, rootDir, pageKey, metadata, config, options);
+    await pushPage(client, rootDir, pageKey, metadata, config, options, result);
   }
 
   await writeConfig(rootDir, config);
-  return config;
+  return result;
 }
 
 async function pushPage(
@@ -50,8 +66,24 @@ async function pushPage(
   metadata: PageMetadata,
   config: ConfluenceMdConfig,
   options: PushOptions,
+  result: PushResult,
 ): Promise<void> {
   const pageDir = pageDirFromPath(rootDir, metadata.path);
+  const pageExists = await fileExists(pageMarkdownPath(pageDir));
+
+  if (metadata.deleted || !pageExists) {
+    if (metadata.id && options.prunePages) {
+      result.deletedPages.push(metadata.path);
+      if (!options.dryRun) {
+        await client.deletePage(metadata.id);
+        removePageFromConfig(config, pageKey, metadata.path);
+      }
+    } else if (!metadata.id && metadata.deleted) {
+      removePageFromConfig(config, pageKey, metadata.path);
+    }
+    return;
+  }
+
   const markdown = await readPageMarkdown(pageDir);
   const storage = markdownToStorage(markdown);
   const contentHash = await computePageHash(pageDir);
@@ -61,6 +93,7 @@ async function pushPage(
       return;
     }
     const parentId = resolveParentId(metadata, config, options.parentId);
+    result.createdPages.push(metadata.path);
     if (options.dryRun) {
       return;
     }
@@ -68,7 +101,7 @@ async function pushPage(
     const created = await client.createPage(config.space, metadata.title, storage, parentId);
 
     const updated = updateConfigAfterPush(pageKey, metadata, config, created, contentHash);
-    await postPushSync(client, pageDir, updated, options, config);
+    await postPushSync(client, pageDir, updated, options, config, result);
     return;
   }
 
@@ -79,7 +112,9 @@ async function pushPage(
     throw new ConflictError("Remote page has changed", metadata.localBase, remoteVersion);
   }
 
+  result.updatedPages.push(metadata.path);
   if (options.dryRun) {
+    await collectAttachmentPruneCandidates(client, metadata, pageDir, options, result);
     return;
   }
 
@@ -91,7 +126,7 @@ async function pushPage(
   });
 
   const updatedMetadata = updateConfigAfterPush(pageKey, metadata, config, updated, contentHash);
-  await postPushSync(client, pageDir, updatedMetadata, options, config);
+  await postPushSync(client, pageDir, updatedMetadata, options, config, result);
 }
 
 function updateConfigAfterPush(
@@ -109,6 +144,7 @@ function updateConfigAfterPush(
   metadata.lastPushed = new Date().toISOString();
   metadata.localBase = page.version.number;
   metadata.contentHash = contentHash;
+  metadata.deleted = false;
 
   if (pageKey !== updatedKey) {
     delete config.pages[pageKey];
@@ -130,7 +166,10 @@ async function postPushSync(
   metadata: PageMetadata,
   options: PushOptions,
   config: ConfluenceMdConfig,
+  result: PushResult,
 ): Promise<void> {
+  await collectAttachmentPruneCandidates(client, metadata, pageDir, options, result);
+
   metadata.attachments = await uploadAttachments(
     client,
     metadata.id ?? "",
@@ -146,6 +185,41 @@ async function postPushSync(
   if (!options.noLabels && metadata.id) {
     const labels = await readLabelsFile(pageDir);
     metadata.labels = await syncLabelsToRemote(client, metadata.id, labels);
+  }
+}
+
+async function collectAttachmentPruneCandidates(
+  client: ConfluenceClient,
+  metadata: PageMetadata,
+  pageDir: string,
+  options: PushOptions,
+  result: PushResult,
+): Promise<void> {
+  if (!metadata.id || !options.pruneAttachments) {
+    return;
+  }
+
+  const candidates = await getAttachmentPruneCandidates(client, metadata.id, pageDir);
+  if (candidates.length === 0) {
+    return;
+  }
+
+  result.deletedAttachments[metadata.path] = candidates.map((candidate) => candidate.filename);
+}
+
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    await fs.access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function removePageFromConfig(config: ConfluenceMdConfig, pageKey: string, pagePath: string): void {
+  delete config.pages[pageKey];
+  if (config.paths[pagePath] === pageKey) {
+    delete config.paths[pagePath];
   }
 }
 

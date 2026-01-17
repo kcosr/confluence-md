@@ -58,7 +58,7 @@ Build a Git-style CLI tool for bidirectional synchronization between Confluence 
 ### Workflow 1: Clone and Edit Existing Page
 
 ```bash
-# Clone a page using its web URL
+# Clone a page (includes sub-pages) using its web URL
 confluence-md clone "https://company.atlassian.net/wiki/spaces/PROJ/pages/123456789/My+Page"
 
 # Creates:
@@ -66,8 +66,10 @@ confluence-md clone "https://company.atlassian.net/wiki/spaces/PROJ/pages/123456
 # ├── .confluence/
 # │   └── config.json
 # ├── page.md
-# └── attachments/
-#     └── diagram.png
+# ├── attachments/
+# │   └── diagram.png
+# └── child-page/
+#     └── page.md
 
 cd my-page/
 vim page.md          # Edit content
@@ -153,13 +155,15 @@ confluence-md push           # Push merged changes
 
 | Command | Description |
 |---------|-------------|
-| `clone <url> [path]` | Download page/space to new local folder |
+| `clone <url> [path]` | Download page/space to new local folder (page clones include sub-pages) |
 | `clone --no-attachments` | Clone without downloading attachments |
 | `clone --no-labels` | Clone without syncing labels |
 | `clone --write-attachment-warnings` | Write skipped attachment warnings into `page.md` |
 | `pull` | Refresh from tracked remote |
 | `pull <url>` | Pull from different remote (override) |
 | `sync <source-path>` | Sync markdown from a source directory into this workspace |
+| `sync --prefix <path>` | Prefix synced pages under a root path |
+| `sync --prune` | Mark pages missing from the source for deletion |
 | `pull --no-labels` | Pull without syncing labels |
 | `pull --write-attachment-warnings` | Write skipped attachment warnings into `page.md` |
 | `push` | Push to tracked remote |
@@ -170,6 +174,7 @@ confluence-md push           # Push merged changes
 | `push --message "..."` | Set version message |
 | `push --no-labels` | Skip label sync |
 | `push --prune-attachments` | Delete remote attachments missing locally |
+| `push --prune-pages` | Delete remote pages marked for deletion |
 | `push --force` | Overwrite even if remote changed (fetch latest version) |
 
 ### Comparison
@@ -417,6 +422,7 @@ On pull/clone, if a page's title or parent changes, the local directory is renam
 | `pages.*.attachments` | Map of filename → attachment metadata |
 | `pages.*.attachments.*.status` | `synced` or `skipped` (download failed/omitted) |
 | `pages.*.attachments.*.reason` | Reason for skipped attachment (if status=`skipped`) |
+| `pages.*.deleted` | Whether the page is marked for deletion on next `push --prune-pages` |
 | `settings.syncLabels` | Whether to sync labels (default: true) |
 
 ### Authentication
