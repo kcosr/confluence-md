@@ -7,6 +7,7 @@
 ### Added
 
 ### Changed
+- Adjusted markdown conversion for safer inline code handling and preserved macro bodies; documented lossy conversion behavior ([#1](https://github.com/kcosr/confluence-md/pull/1))
 
 ### Fixed
 
