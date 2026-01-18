@@ -2,7 +2,7 @@
 
 Git-style CLI for bidirectional Confluence ↔ Markdown sync.
 
-> ⚠️ **Lossy conversion warning:** This tool intentionally trades fidelity for simplicity. It’s best for:
+> ⚠️ **Lossy conversion warning:** This tool uses a simplified conversion and may drop or flatten complex Confluence constructs. It’s best for:
 > 1) Publishing simple Markdown docs to Confluence.
 > 2) Exporting Confluence pages to Markdown for agent/LLM consumption.
 >
