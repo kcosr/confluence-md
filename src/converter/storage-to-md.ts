@@ -6,7 +6,7 @@ import {
 } from "../parser/storage-parser.js";
 import { formatConfluenceBlock } from "./confluence-blocks.js";
 
-const MACRO_WITH_RICH_BODY = new Set(["info", "warning", "note", "tip", "expand"]);
+const MACRO_WITH_RICH_BODY = new Set(["info", "warning", "note", "tip"]);
 
 export function storageToMarkdown(storage: string): string {
   const nodes = parseStorage(storage);
@@ -90,6 +90,15 @@ function renderInlineNodes(nodes: StorageNode[]): string {
   return nodes.map((node) => renderInlineNode(node)).join("");
 }
 
+function renderInlineCodeSpan(text: string): string {
+  const matches = text.match(/`+/g);
+  const maxTicks = matches ? Math.max(...matches.map((match) => match.length)) : 0;
+  const fence = "`".repeat(maxTicks + 1);
+  const needsPadding = /^\s|\s$/.test(text);
+  const content = needsPadding ? ` ${text} ` : text;
+  return `${fence}${content}${fence}`;
+}
+
 function renderInlineNode(node: StorageNode): string {
   if (node.type === "text") {
     return escapeMarkdownText(node.value);
@@ -105,7 +114,7 @@ function renderInlineNode(node: StorageNode): string {
     case "i":
       return `*${renderInlineNodes(node.children)}*`;
     case "code":
-      return `\`${renderInlineNodes(node.children)}\``;
+      return renderInlineCodeSpan(renderInlineNodes(node.children));
     case "br":
       return "  \n";
     case "a":
@@ -114,6 +123,10 @@ function renderInlineNode(node: StorageNode): string {
       return renderConfluenceLink(node);
     case "ac:image":
       return renderImage(node);
+    case "ac:structured-macro":
+      return renderInlineMacro(node);
+    case "time":
+      return node.attrs.datetime ?? "";
     default:
       return renderInlineNodes(node.children);
   }
@@ -189,11 +202,209 @@ function collectTableRows(node: StorageElementNode): string[][] {
     const cells = row.children
       .filter(isElementNode)
       .filter((child) => child.name === "td" || child.name === "th")
-      .map((cell) => renderInlineNodes(cell.children).trim());
+      .map((cell) => renderTableCell(cell));
     rows.push(cells);
   }
 
   return rows;
+}
+
+/**
+ * Render table cell content, handling block-level elements that may appear in cells.
+ * Markdown tables only support inline content, so block elements are flattened.
+ */
+function renderTableCell(node: StorageElementNode): string {
+  const parts: string[] = [];
+
+  for (const child of node.children) {
+    if (child.type === "text") {
+      const text = child.value.trim();
+      if (text) parts.push(escapeMarkdownText(text));
+      continue;
+    }
+
+    const name = child.name;
+
+    if (name === "p") {
+      const content = renderCellContent(child.children);
+      if (content) parts.push(content);
+    } else if (/^h[1-6]$/.test(name)) {
+      // Render headers as bold text in table cells
+      const content = renderCellContent(child.children);
+      if (content) parts.push(`**${content}**`);
+    } else if (name === "ul" || name === "ol") {
+      // Flatten lists, each item becomes a separate part (joined with <br> later)
+      const items = flattenListItems(child);
+      for (const item of items) {
+        if (item) parts.push(`• ${item}`);
+      }
+    } else if (name === "ac:structured-macro") {
+      const macroContent = renderCellMacro(child);
+      if (macroContent) parts.push(macroContent);
+    } else if (name === "time") {
+      const datetime = child.attrs.datetime ?? "";
+      if (datetime) parts.push(datetime);
+    } else if (name === "br") {
+      // Skip line breaks in cells
+    } else {
+      const content = renderCellContent([child]);
+      if (content) parts.push(content);
+    }
+  }
+
+  // Join with <br> for line breaks in table cells, escape pipes for markdown tables
+  return parts
+    .join("<br>")
+    .replace(/\n+/g, " ")
+    .replace(/\|/g, "\\|")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Render content for table cells, handling inline and some block elements.
+ */
+function renderCellContent(nodes: StorageNode[]): string {
+  return nodes
+    .map((node) => {
+      if (node.type === "text") {
+        return escapeMarkdownText(node.value);
+      }
+
+      const name = node.name;
+
+      switch (name) {
+        case "strong":
+        case "b":
+          return `**${renderCellContent(node.children)}**`;
+        case "em":
+        case "i":
+          return `*${renderCellContent(node.children)}*`;
+        case "code":
+          return renderInlineCodeSpan(renderCellContent(node.children));
+        case "br":
+          return " ";
+        case "a":
+          return renderAnchor(node);
+        case "ac:link":
+          return renderConfluenceLink(node);
+        case "ac:structured-macro":
+          return renderCellMacro(node);
+        case "time":
+          return node.attrs.datetime ?? "";
+        case "p":
+          return renderCellContent(node.children);
+        case "ul":
+        case "ol": {
+          const items = flattenListItems(node);
+          return items.map((item) => `• ${item}`).join("<br>");
+        }
+        default:
+          return renderCellContent(node.children);
+      }
+    })
+    .join("");
+}
+
+/**
+ * Flatten a list into an array of text items for table cells.
+ */
+function flattenListItems(node: StorageElementNode): string[] {
+  const items: string[] = [];
+  const listItems = node.children
+    .filter(isElementNode)
+    .filter((child) => child.name === "li");
+
+  for (const li of listItems) {
+    const content = renderCellContent(li.children).trim();
+    if (content) items.push(content);
+  }
+
+  return items;
+}
+
+/**
+ * Render a macro that appears inside a table cell.
+ */
+function renderCellMacro(node: StorageElementNode): string {
+  const name = node.attrs["ac:name"] ?? "";
+  const params = extractMacroParams(node);
+
+  // Jira macro: render as the issue key
+  if (name === "jira") {
+    const key = params.key ?? "";
+    return key || "[JIRA]";
+  }
+
+  // Code macro: use <pre> with <br> to preserve newlines in table cells
+  if (name === "code") {
+    const code = extractMacroPlainBody(node);
+    // Replace newlines with <br> since actual newlines break markdown tables
+    const escaped = escapeHtml(code).replace(/\n/g, "<br>");
+    return `<code>${escaped}</code>`;
+  }
+
+  // Other macros: try to render plain or rich text body to avoid dropping content
+  return renderMacroTableBody(node);
+}
+
+/**
+ * Render a macro that appears in inline context (lists, paragraphs).
+ */
+function renderInlineMacro(node: StorageElementNode): string {
+  const name = node.attrs["ac:name"] ?? "";
+  const params = extractMacroParams(node);
+
+  // Jira macro: render as the issue key
+  if (name === "jira") {
+    const key = params.key ?? "";
+    return key || "[JIRA]";
+  }
+
+  // Code macro: render as inline code
+  if (name === "code") {
+    const code = extractMacroPlainBody(node);
+    return renderInlineCodeSpan(code);
+  }
+
+  // Status macro: render as text
+  if (name === "status") {
+    const title = params.title ?? "";
+    return title ? `[${title}]` : "";
+  }
+
+  // Other inline macros: try to render plain or rich text body to avoid dropping content
+  return renderMacroInlineBody(node);
+}
+
+function renderMacroInlineBody(node: StorageElementNode): string {
+  const plainBody = findChild(node, "ac:plain-text-body");
+  if (plainBody) {
+    const text = getTextContent(plainBody).trim();
+    return text ? escapeMarkdownText(text) : "";
+  }
+
+  const richBody = findChild(node, "ac:rich-text-body");
+  if (richBody) {
+    return renderInlineNodes(richBody.children).trim();
+  }
+
+  return "";
+}
+
+function renderMacroTableBody(node: StorageElementNode): string {
+  const plainBody = findChild(node, "ac:plain-text-body");
+  if (plainBody) {
+    const text = getTextContent(plainBody).trim();
+    return text ? escapeMarkdownText(text) : "";
+  }
+
+  const richBody = findChild(node, "ac:rich-text-body");
+  if (richBody) {
+    return renderCellContent(richBody.children).trim();
+  }
+
+  return "";
 }
 
 function normalizeRow(row: string[], colCount: number): string[] {
@@ -214,6 +425,14 @@ function renderMacro(node: StorageElementNode): string {
     return `\`\`\`${language}\n${code}\n\`\`\``.trim();
   }
 
+  // Expand/details macros: render as HTML <details> to allow markdown content
+  if (name === "expand" || name === "details") {
+    const bodyNode = findChild(node, "ac:rich-text-body");
+    const body = bodyNode ? renderBlockNodes(bodyNode.children).join("\n\n") : "";
+    const title = params.title ?? "Click to expand";
+    return `<details>\n<summary>${escapeHtml(title)}</summary>\n\n${body}\n\n</details>`;
+  }
+
   if (MACRO_WITH_RICH_BODY.has(name)) {
     const bodyNode = findChild(node, "ac:rich-text-body");
     const body = bodyNode ? renderBlockNodes(bodyNode.children).join("\n\n") : undefined;
@@ -230,6 +449,13 @@ function renderMacro(node: StorageElementNode): string {
     params: { name },
     body: rawBody,
   });
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 function renderTaskList(node: StorageElementNode): string {
@@ -368,7 +594,39 @@ function encodeTitle(title: string): string {
 }
 
 function escapeMarkdownText(value: string): string {
-  return value.replace(/([\\`*_\[\]{}()#+\-.!|>])/g, "\\$1");
+  return decodeHtmlEntities(value).replace(/([\\`*_\[\]{}()#+\-.!|>])/g, "\\$1");
+}
+
+/**
+ * Decode common HTML entities that aren't handled by the XML parser.
+ */
+function decodeHtmlEntities(text: string): string {
+  const entities: Record<string, string> = {
+    "&nbsp;": " ",
+    "&rsquo;": "'",
+    "&lsquo;": "'",
+    "&rdquo;": '"',
+    "&ldquo;": '"',
+    "&mdash;": "—",
+    "&ndash;": "–",
+    "&hellip;": "…",
+    "&copy;": "©",
+    "&reg;": "®",
+    "&trade;": "™",
+    "&bull;": "•",
+    "&middot;": "·",
+  };
+
+  let result = text;
+  for (const [entity, char] of Object.entries(entities)) {
+    result = result.split(entity).join(char);
+  }
+
+  // Handle numeric entities like &#8217; (rsquo) and &#x2019;
+  result = result.replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number.parseInt(code, 10)));
+  result = result.replace(/&#x([0-9a-fA-F]+);/g, (_, code) => String.fromCharCode(Number.parseInt(code, 16)));
+
+  return result;
 }
 
 function isElementNode(node: StorageNode): node is StorageElementNode {

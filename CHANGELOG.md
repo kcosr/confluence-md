@@ -7,6 +7,8 @@
 ### Added
 
 ### Changed
+- Adjusted markdown conversion for safer inline code handling and preserved macro bodies; documented lossy conversion behavior ([#1](https://github.com/kcosr/confluence-md/pull/1))
+- Updated `npm run test` to run Vitest once by default; added `test:watch` for watch mode ([#1](https://github.com/kcosr/confluence-md/pull/1))
 
 ### Fixed
 
