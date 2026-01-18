@@ -9,8 +9,8 @@
   "scripts": {
     "build": "tsc",
     "dev": "CONFLUENCE_URL=http://localhost:3000 CONFLUENCE_EMAIL=test@example.com CONFLUENCE_TOKEN=token tsx src/cli.ts",
-    "test": "vitest",
-    "test:run": "vitest run",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
